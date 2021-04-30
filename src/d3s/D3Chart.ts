@@ -1,30 +1,24 @@
 import * as d3 from 'd3';
-import { Gender } from '../components/GenderDropdown';
+import { Student } from '../App';
 
-const menUrl = 'https://udemy-react-d3.firebaseio.com/tallest_men.json';
-const womenUrl = 'https://udemy-react-d3.firebaseio.com/tallest_women.json';
-const margin = { top: 80, right: 80, bottom: 80, left: 80 };
-const width = 800 - margin.left - margin.right;
-const height = 500 - margin.top - margin.bottom;
-
-interface Data {
-  height: number;
-  name: string;
-}
+const margin = { top: 10, right: 10, bottom: 80, left: 70 };
+const width = 450 - margin.left - margin.right;
+const height = 300 - margin.top - margin.bottom;
 
 export default class D3Chart {
-  svg!: d3.Selection<SVGGElement, unknown, null, undefined>;
-  xAxisGroup?: d3.Selection<SVGGElement, unknown, null, undefined>;
-  yAxisGroup?: d3.Selection<SVGGElement, unknown, null, undefined>;
-  xLabel?: d3.Selection<SVGTextElement, unknown, null, undefined>;
-  data: Data[] = [];
-  menData: Data[] = [];
-  womenData: Data[] = [];
+  private g!: d3.Selection<SVGGElement, unknown, null, undefined>;
+  private x!: d3.ScaleLinear<number, number, never>;
+  private y!: d3.ScaleLinear<number, number, never>;
+  private xAxisGroup!: d3.Selection<SVGGElement, unknown, null, undefined>;
+  private yAxisGroup!: d3.Selection<SVGGElement, unknown, null, undefined>;
+  private data: Student[] = [];
+  private updateName!: (name: string) => void;
 
-  constructor(element: d3.BaseType) {
+  constructor(element: d3.BaseType, data: Student[], updateName: any) {
     const vis = this;
+    vis.updateName = updateName;
 
-    vis.svg = d3
+    vis.g = d3
       .select(element)
       .append('svg')
       .attr('width', width + margin.left + margin.right)
@@ -32,96 +26,74 @@ export default class D3Chart {
       .append('g')
       .attr('transform', `translate(${margin.left}, ${margin.top})`);
 
-    vis.xLabel = vis.svg
-      .append('text')
-      .attr('x', width / 2)
-      .attr('y', height + 50)
-      .attr('text-anchor', 'middle');
+    vis.x = d3.scaleLinear().range([0, width]);
+    vis.y = d3.scaleLinear().range([height, 0]);
 
-    vis.svg
-      .append('text')
-      .attr('x', -(height / 2))
-      .attr('y', -50)
-      .attr('text-anchor', 'middle')
-      .text('Height in cm')
-      .attr('transform', 'rotate(-90)');
-
-    vis.xAxisGroup = vis.svg
+    vis.xAxisGroup = vis.g
       .append('g')
       .attr('transform', `translate(0, ${height})`);
 
-    vis.yAxisGroup = vis.svg.append('g');
+    vis.yAxisGroup = vis.g.append('g');
 
-    Promise.all<Data[], Data[]>([
-      d3.json(menUrl) as Promise<Data[]>,
-      d3.json(womenUrl) as Promise<Data[]>,
-    ]).then(datasets => {
-      const [men, women] = datasets;
+    vis.g
+      .append('text')
+      .attr('x', width / 2)
+      .attr('y', height + 40)
+      .attr('font-size', 18)
+      .attr('text-anchor', 'middle')
+      .text('Age');
 
-      vis.menData = men;
-      vis.womenData = women;
-      vis.update('men');
-    });
+    vis.g
+      .append('text')
+      .attr('x', -(height / 2))
+      .attr('y', -40)
+      .attr('transform', 'rotate(-90)')
+      .attr('font-size', 18)
+      .attr('text-anchor', 'middle')
+      .text('Height in cm');
+
+    vis.update(data);
   }
 
-  update(gender: Gender) {
+  update(data: Student[]) {
     const vis = this;
+    vis.data = data;
 
-    vis.data = gender === 'men' ? vis.menData : vis.womenData;
-    vis.xLabel?.text(`The world's tallest ${gender}`);
+    vis.x.domain([0, d3.max(vis.data, d => Number(d.age)) as number]);
+    vis.y.domain([0, d3.max(vis.data, d => Number(d.height)) as number]);
 
-    const y = d3
-      .scaleLinear()
-      .domain([
-        d3.min(vis.data, d => d.height * 0.95) as number,
-        d3.max(vis.data, d => d.height) as number,
-      ])
-      .range([height, 0]);
+    const xAxisCall = d3.axisBottom(vis.x);
+    const yAxisCall = d3.axisLeft(vis.y);
 
-    const x = d3
-      .scaleBand()
-      .domain(vis.data.map(d => d.name))
-      .range([0, width])
-      .padding(0.4);
-
-    const xAxisCall = d3.axisBottom(x);
-    vis.xAxisGroup?.transition().duration(500).call(xAxisCall);
-
-    const yAxisCall = d3.axisLeft(y);
-    vis.yAxisGroup?.transition().duration(500).call(yAxisCall);
+    vis.xAxisGroup.transition().duration(1000).call(xAxisCall);
+    vis.yAxisGroup.transition().duration(1000).call(yAxisCall);
 
     // data join
-    const rects = vis.svg.selectAll('rect').data(vis.data);
+    const circles = vis.g
+      .selectAll('circle')
+      .data(vis.data, (d: any) => d.name);
 
     // exit
-    rects
-      .exit()
-      .transition()
-      .duration(500)
-      .attr('height', 0)
-      .attr('y', height)
-      .remove();
+    circles.exit().transition().duration(1000).attr('cy', vis.y(0)).remove();
 
     // update
-    rects
+    circles
       .transition()
-      .duration(500)
-      .attr('x', d => x(d.name)!)
-      .attr('y', d => y(d.height))
-      .attr('width', x.bandwidth)
-      .attr('height', d => height - y(d.height));
+      .duration(1000)
+      .attr('cx', d => vis.x(Number(d.age)))
+      .attr('cy', d => vis.y(Number(d.height)));
 
     // enter
-    rects
+    circles
       .enter()
-      .append('rect')
-      .attr('x', d => x(d.name)!)
-      .attr('width', x.bandwidth)
+      .append('circle')
+      .attr('cy', vis.y(0))
+      .attr('cx', d => vis.x(Number(d.age)))
+      .attr('r', 5)
       .attr('fill', 'grey')
-      .attr('y', height)
+      .on('click', e => vis.updateName(e.target.__data__.name))
       .transition()
-      .duration(500)
-      .attr('height', d => height - y(d.height))
-      .attr('y', d => y(d.height));
+      .duration(1000)
+      .attr('cy', d => vis.y(Number(d.height)));
   }
 }
